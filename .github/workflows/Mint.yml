@@ -1,4 +1,4 @@
-name: "🍃 Linux Mint Dev VM"
+name: "🍃 Setin's Mint DevBox"
 
 on:
   workflow_dispatch:
@@ -10,29 +10,35 @@ jobs:
 
     steps:
       # ============================================================
-      # 🍃 DESKTOP + DEVELOPMENT PACKAGES
+      # 📦 DESKTOP + DEV + FLEX PACKAGES
       # ============================================================
-      - name: "📦 Install desktop + DEV ARSENAL"
+      - name: "📦 Install the entire kitchen"
         run: |
           sudo apt-get update
 
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             cinnamon-core \
+            cinnamon-session \
+            cinnamon-settings-daemon \
+            muffin \
+            nemo \
+            gnome-terminal \
+            dbus-x11 \
             tigervnc-standalone-server \
             tigervnc-common \
             novnc \
             websockify \
-            dbus-x11 \
             xterm \
-            curl \
-            wget \
             git \
             build-essential \
             gcc \
             g++ \
+            clang \
             make \
             cmake \
             ninja-build \
+            gdb \
+            lldb \
             python3 \
             python3-pip \
             python3-venv \
@@ -41,21 +47,36 @@ jobs:
             openjdk-17-jdk \
             rustc \
             cargo \
-            clang \
-            lldb \
-            gdb \
+            golang-go \
+            ruby \
+            lua5.4 \
+            sqlite3 \
             vim \
             nano \
+            tmux \
+            shellcheck \
+            jq \
+            curl \
+            wget \
             zip \
             unzip \
-            jq \
+            tree \
             htop \
-            tree
+            btop \
+            neofetch \
+            cmatrix \
+            cowsay \
+            figlet \
+            lolcat \
+            fortune-mod \
+            sl
 
-          # ----------------------------------------------------------
+          # ========================================================
           # ⚡ FASTFETCH
-          # ----------------------------------------------------------
+          # ========================================================
           if ! sudo apt-get install -y fastfetch; then
+            echo "⚡ Installing Fastfetch from official release..."
+
             wget -q \
               https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb \
               -O /tmp/fastfetch.deb
@@ -63,50 +84,73 @@ jobs:
             sudo apt-get install -y /tmp/fastfetch.deb
           fi
 
-          # ----------------------------------------------------------
-          # 👤 USER
-          # ----------------------------------------------------------
-          sudo useradd -m -s /bin/bash mint || true
+          # ========================================================
+          # 👤 CREATE USER
+          # ========================================================
+          sudo useradd -m -s /bin/bash mint 2>/dev/null || true
+
           echo "mint:mint" | sudo chpasswd
           sudo usermod -aG sudo mint
 
-          sudo -u mint mkdir -p \
+          sudo mkdir -p \
             /home/mint/Desktop \
             /home/mint/Downloads \
-            /home/mint/Projects
-
-          # Fastfetch whenever a terminal opens 😈
-          cat <<'EOF' | sudo tee -a /home/mint/.bashrc
-
-          # 🍃 Mint GitHub VM
-          if command -v fastfetch >/dev/null 2>&1; then
-              fastfetch
-          fi
-          EOF
+            /home/mint/Projects \
+            /home/mint/.vnc
 
           sudo chown -R mint:mint /home/mint
 
+          # ========================================================
+          # 😎 TERMINAL FLEX
+          # ========================================================
+          cat <<'EOF' | sudo tee -a /home/mint/.bashrc
+
+          clear
+
+          echo
+          echo "╔══════════════════════════════════════╗"
+          echo "║       🍃 SETIN'S MINT DEVBOX        ║"
+          echo "║     GitHub-powered Linux chaos      ║"
+          echo "╚══════════════════════════════════════╝"
+          echo
+
+          if command -v fastfetch >/dev/null 2>&1; then
+              fastfetch
+          fi
+
+          echo
+          echo "🔥 DevBox armed and operational."
+          echo
+          EOF
+
+          sudo chown mint:mint /home/mint/.bashrc
+
       # ============================================================
-      # 🖥️ VNC CONFIGURATION
+      # 🖥️ VNC CONFIG
       # ============================================================
-      - name: "🖥️ Configure VNC"
+      - name: "🖥️ Configure VNC + Cinnamon"
         run: |
           sudo mkdir -p /home/mint/.vnc
           sudo mkdir -p /tmp/runtime-mint
 
-          sudo chown mint:mint /home/mint/.vnc
+          sudo chown -R mint:mint /home/mint/.vnc
           sudo chown mint:mint /tmp/runtime-mint
 
           sudo chmod 700 /tmp/runtime-mint
 
-          # VNC password = mint
+          # VNC password: mint
           echo "mint" | sudo -u mint vncpasswd -f | \
             sudo tee /home/mint/.vnc/passwd >/dev/null
 
           sudo chown mint:mint /home/mint/.vnc/passwd
           sudo chmod 600 /home/mint/.vnc/passwd
 
-          # Cinnamon startup
+          # ========================================================
+          # 🍃 CINNAMON STARTUP
+          #
+          # Software rendering is important because GitHub's runner
+          # doesn't give Cinnamon a normal desktop GPU.
+          # ========================================================
           cat <<'EOF' | sudo tee /home/mint/.vnc/xstartup
           #!/bin/bash
 
@@ -116,18 +160,35 @@ jobs:
           export HOME=/home/mint
           export USER=mint
           export LOGNAME=mint
+
           export XDG_RUNTIME_DIR=/tmp/runtime-mint
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP=X-Cinnamon
+          export DESKTOP_SESSION=cinnamon
+
+          export GDK_BACKEND=x11
+
+          # 🥔 GitHub GPU™
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export CINNAMON_2D=1
 
           cd /home/mint
 
-          exec dbus-launch --exit-with-session cinnamon-session
+          # Try Cinnamon's 2D session first.
+          if command -v cinnamon-session-cinnamon2d >/dev/null 2>&1; then
+              exec dbus-launch --exit-with-session \
+                cinnamon-session-cinnamon2d
+          else
+              exec dbus-launch --exit-with-session \
+                cinnamon-session
+          fi
           EOF
 
           sudo chmod +x /home/mint/.vnc/xstartup
           sudo chown -R mint:mint /home/mint/.vnc
 
       # ============================================================
-      # 🚀 START VNC
+      # 🚀 START TIGERVNC
       # ============================================================
       - name: "🚀 Start VNC"
         run: |
@@ -135,38 +196,43 @@ jobs:
           sudo chown mint:mint /tmp/runtime-mint
           sudo chmod 700 /tmp/runtime-mint
 
-          # CRITICAL FIX:
-          # Don't launch VNC from /home/runner/work/... 💀
-          sudo -u mint bash -c '
-            cd /home/mint
+          sudo -u mint bash <<'EOF'
+          cd /home/mint
 
-            export HOME=/home/mint
-            export USER=mint
-            export LOGNAME=mint
-            export XDG_RUNTIME_DIR=/tmp/runtime-mint
+          export HOME=/home/mint
+          export USER=mint
+          export LOGNAME=mint
+          export XDG_RUNTIME_DIR=/tmp/runtime-mint
 
-            vncserver -kill :1 2>/dev/null || true
+          vncserver -kill :1 2>/dev/null || true
 
-            vncserver :1 \
-              -localhost no \
-              -geometry 1280x720 \
-              -depth 24
-          '
+          vncserver :1 \
+            -localhost no \
+            -geometry 1280x720 \
+            -depth 24
+          EOF
 
-          sleep 7
+          echo "⏳ Giving Cinnamon a few seconds..."
+          sleep 10
 
-          echo ""
-          echo "===== VNC CHECK ====="
+          echo
+          echo "====== VNC ======"
 
           if sudo ss -lnt | grep -q ':5901'; then
-            echo "🔥 PORT 5901 IS ALIVE"
+            echo "🔥 VNC IS ALIVE ON 5901"
           else
-            echo "💀 VNC FAILED"
-            echo ""
-            echo "===== LOGS ====="
+            echo "💀 VNC DIED"
+            echo
             sudo cat /home/mint/.vnc/*.log || true
             exit 1
           fi
+
+          echo
+          echo "====== CINNAMON ======"
+
+          ps aux | grep -E \
+            'cinnamon|muffin|nemo' \
+            | grep -v grep || true
 
       # ============================================================
       # 🌐 noVNC
@@ -179,15 +245,10 @@ jobs:
             127.0.0.1:5901 \
             >/tmp/novnc.log 2>&1 &
 
-          sleep 5
+          sleep 4
 
-          echo ""
-          echo "===== noVNC CHECK ====="
-
-          if sudo ss -lnt | grep -q ':6080'; then
-            echo "🔥 PORT 6080 IS ALIVE"
-          else
-            echo "💀 noVNC FAILED"
+          if ! sudo ss -lnt | grep -q ':6080'; then
+            echo "💀 noVNC DIED"
             cat /tmp/novnc.log || true
             exit 1
           fi
@@ -196,12 +257,12 @@ jobs:
             http://127.0.0.1:6080/vnc.html \
             >/dev/null
 
-          echo "🔥 noVNC HTML WORKS"
+          echo "🔥 noVNC IS ALIVE ON 6080"
 
       # ============================================================
-      # ☁️ CLOUDFLARE QUICK TUNNEL
+      # ☁️ CLOUDFLARE
       # ============================================================
-      - name: "☁️ Start Cloudflare tunnel"
+      - name: "☁️ Open tunnel"
         run: |
           wget -q \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
@@ -214,13 +275,16 @@ jobs:
             --no-autoupdate \
             >/tmp/cloudflare.log 2>&1 &
 
-          echo "☁️ Waiting for public URL..."
+          echo "☁️ Waiting for Cloudflare..."
 
           for i in $(seq 1 60); do
 
-            URL=$(grep -oE \
-              'https://[a-zA-Z0-9-]+\.trycloudflare\.com' \
-              /tmp/cloudflare.log | head -1 || true)
+            URL=$(
+              grep -oE \
+                'https://[a-zA-Z0-9-]+\.trycloudflare\.com' \
+                /tmp/cloudflare.log \
+                | head -1 || true
+            )
 
             if [ -n "$URL" ]; then
               echo "$URL" >/tmp/vm-url
@@ -231,100 +295,114 @@ jobs:
           done
 
           if [ ! -s /tmp/vm-url ]; then
-            echo "💀 CLOUDFLARE FAILED"
-            echo ""
+            echo "💀 CLOUDFLARE DID NOT GIVE US A URL"
             cat /tmp/cloudflare.log || true
             exit 1
           fi
 
-          echo "🔥 TUNNEL CREATED"
+          echo "🔥 PUBLIC TUNNEL CREATED"
 
       # ============================================================
-      # 🍃 READY
+      # 😎 READY
       # ============================================================
-      - name: "🍃 MINT IS ALIVE"
+      - name: "😎 DEVBOX READY"
         run: |
           URL="$(cat /tmp/vm-url)"
 
           FINAL="${URL}/vnc.html?autoconnect=true&resize=scale"
 
-          echo ""
-          echo "============================================"
-          echo "          🍃 MINT DEV VM READY"
-          echo "============================================"
-          echo ""
+          echo
+          echo "╔══════════════════════════════════════════════╗"
+          echo "║          🍃 SETIN'S MINT DEVBOX             ║"
+          echo "║                 IS ALIVE                    ║"
+          echo "╚══════════════════════════════════════════════╝"
+          echo
           echo "🌐 OPEN:"
+          echo
           echo "$FINAL"
-          echo ""
+          echo
           echo "🔐 VNC password: mint"
-          echo ""
+          echo
           echo "👤 Linux user: mint"
           echo "🔑 Linux password: mint"
-          echo ""
-          echo "📂 Projects: /home/mint/Projects"
-          echo ""
-          echo "⚡ Fastfetch installed"
-          echo "🐍 Python installed"
-          echo "🟢 Node + npm installed"
-          echo "🦀 Rust + Cargo installed"
-          echo "☕ Java installed"
-          echo "🔨 GCC / G++ / Clang / CMake installed"
-          echo ""
-          echo "⚠️ DO NOT CANCEL THIS ACTION"
-          echo "============================================"
+          echo
+          echo "📂 Projects:"
+          echo "   /home/mint/Projects"
+          echo
+          echo "⚡ FASTFETCH"
+          echo "🐍 PYTHON"
+          echo "🟢 NODE"
+          echo "🦀 RUST"
+          echo "🐹 GO"
+          echo "☕ JAVA"
+          echo "💎 RUBY"
+          echo "🌙 LUA"
+          echo "🔨 GCC / G++ / CLANG"
+          echo "🧠 GDB / LLDB"
+          echo "🖥️ TMUX / VIM"
+          echo "📊 BTOP"
+          echo "🟩 CMATRIX"
+          echo
+          echo "⚠️ KEEP THIS ACTION RUNNING"
+          echo
 
-          # Pretty clickable link in Actions summary
+          # ========================================================
+          # 📋 GITHUB ACTION SUMMARY
+          # ========================================================
           {
-            echo "# 🍃 Mint Dev VM"
-            echo ""
-            echo "## [🔥 OPEN MINT DESKTOP]($FINAL)"
-            echo ""
-            echo "### Login"
-            echo ""
-            echo "**VNC password:** \`mint\`"
-            echo ""
-            echo "**Linux user:** \`mint\`"
-            echo ""
-            echo "**Linux password:** \`mint\`"
-            echo ""
-            echo "### 🧰 Dev tools"
-            echo ""
-            echo "\`fastfetch\` · \`git\` · \`gcc\` · \`g++\` · \`clang\`"
-            echo ""
-            echo "\`python3\` · \`pip\` · \`node\` · \`npm\`"
-            echo ""
-            echo "\`rustc\` · \`cargo\` · \`java\` · \`cmake\`"
-            echo ""
-            echo "⚠️ **The VM disappears when this workflow stops.**"
+            echo "# 🍃 Setin's Mint DevBox"
+            echo
+            echo "## [🚀 OPEN THE DESKTOP]($FINAL)"
+            echo
+            echo "### 🔐 VNC"
+            echo
+            echo "**Password:** \`mint\`"
+            echo
+            echo "### 👤 Linux"
+            echo
+            echo "**User:** \`mint\`"
+            echo
+            echo "**Password:** \`mint\`"
+            echo
+            echo "### 🧰 Arsenal"
+            echo
+            echo "\`fastfetch\` · \`btop\` · \`cmatrix\` · \`tmux\`"
+            echo
+            echo "\`gcc\` · \`g++\` · \`clang\` · \`cmake\` · \`ninja\`"
+            echo
+            echo "\`python3\` · \`node\` · \`npm\`"
+            echo
+            echo "\`rustc\` · \`cargo\` · \`go\` · \`java\`"
+            echo
+            echo "\`ruby\` · \`lua\` · \`git\` · \`sqlite3\`"
+            echo
+            echo "⚠️ **Stopping this workflow destroys the temporary VM.**"
           } >> "$GITHUB_STEP_SUMMARY"
 
           # ========================================================
-          # 🫀 KEEP OUR ABOMINATION ALIVE
+          # 🫀 KEEP IT ALIVE
           # ========================================================
-
           while true; do
 
             if ! sudo ss -lnt | grep -q ':5901'; then
-              echo ""
               echo "💀 VNC DIED"
               sudo cat /home/mint/.vnc/*.log || true
               exit 1
             fi
 
             if ! sudo ss -lnt | grep -q ':6080'; then
-              echo ""
               echo "💀 noVNC DIED"
               cat /tmp/novnc.log || true
               exit 1
             fi
 
             if ! pgrep -f cloudflared >/dev/null; then
-              echo ""
               echo "💀 CLOUDFLARE DIED"
               cat /tmp/cloudflare.log || true
               exit 1
             fi
 
-            echo "🍃 VM alive — $(date)"
+            echo "🍃 DevBox alive — $(date)"
             sleep 30
+
           done
