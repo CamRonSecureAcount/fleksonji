@@ -1,4 +1,4 @@
-name: "🍃 Linux Mint Browser VM"
+name: "🍃 Mint Desktop — FIXED"
 
 on:
   workflow_dispatch:
@@ -9,107 +9,173 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: "📦 Install desktop + noVNC"
+      - name: "🔥 Install desktop"
         run: |
           sudo apt-get update
+
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            cinnamon-desktop-environment \
+            cinnamon-core \
             tigervnc-standalone-server \
-            novnc websockify dbus-x11
+            tigervnc-common \
+            novnc \
+            websockify \
+            dbus-x11 \
+            xterm \
+            curl \
+            wget
 
           sudo useradd -m -s /bin/bash mint || true
           echo "mint:mint" | sudo chpasswd
-          sudo usermod -aG sudo mint
 
-      - name: "🖥️ Start Cinnamon VM desktop"
+      - name: "🖥️ Configure VNC"
         run: |
           sudo -u mint mkdir -p /home/mint/.vnc
 
-          echo "mint" | sudo -u mint vncpasswd -f > /tmp/passwd
-          sudo mv /tmp/passwd /home/mint/.vnc/passwd
+          echo "mint" | sudo -u mint vncpasswd -f | \
+            sudo tee /home/mint/.vnc/passwd >/dev/null
+
           sudo chown mint:mint /home/mint/.vnc/passwd
           sudo chmod 600 /home/mint/.vnc/passwd
 
           cat <<'EOF' | sudo tee /home/mint/.vnc/xstartup
-          #!/bin/sh
+          #!/bin/bash
+
           unset SESSION_MANAGER
           unset DBUS_SESSION_BUS_ADDRESS
-          exec dbus-launch --exit-with-session cinnamon-session
+
+          export DISPLAY=:1
+          export XDG_RUNTIME_DIR=/tmp/runtime-mint
+
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          dbus-launch --exit-with-session cinnamon-session &
           EOF
 
           sudo chmod +x /home/mint/.vnc/xstartup
           sudo chown -R mint:mint /home/mint/.vnc
 
+      - name: "🚀 Start VNC"
+        run: |
+          sudo -u mint vncserver -kill :1 || true
+
           sudo -u mint vncserver :1 \
+            -localhost no \
             -geometry 1280x720 \
-            -depth 24 \
-            -localhost yes
+            -depth 24
+
+          sleep 5
+
+          echo "=== VNC PROCESSES ==="
+          ps aux | grep -E "Xtigervnc|Xvnc" | grep -v grep || true
+
+          echo "=== PORT 5901 ==="
+          sudo ss -lntp | grep 5901 || {
+            echo "💀 VNC DID NOT START"
+            cat /home/mint/.vnc/*.log || true
+            exit 1
+          }
 
       - name: "🌐 Start noVNC"
         run: |
           nohup websockify \
             --web=/usr/share/novnc \
-            6080 localhost:5901 \
-            > /tmp/novnc.log 2>&1 &
+            6080 \
+            127.0.0.1:5901 \
+            >/tmp/novnc.log 2>&1 &
 
           sleep 3
-          curl -I http://127.0.0.1:6080/vnc.html
 
-      - name: "🚇 Create public tunnel"
+          echo "=== PORT 6080 ==="
+          sudo ss -lntp | grep 6080 || {
+            cat /tmp/novnc.log
+            exit 1
+          }
+
+          curl --fail http://127.0.0.1:6080/vnc.html >/dev/null
+
+          echo "🔥 noVNC WORKS LOCALLY"
+
+      - name: "☁️ Start Cloudflare tunnel"
         run: |
-          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-            -O cloudflared
+          wget -q \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -O /tmp/cloudflared
 
-          chmod +x cloudflared
+          chmod +x /tmp/cloudflared
 
-          nohup ./cloudflared tunnel \
+          nohup /tmp/cloudflared tunnel \
             --url http://127.0.0.1:6080 \
             --no-autoupdate \
-            > /tmp/cloudflare.log 2>&1 &
+            >/tmp/cloudflare.log 2>&1 &
 
           echo "Waiting for tunnel..."
 
-          for i in $(seq 1 30); do
-            URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' /tmp/cloudflare.log | head -1 || true)
+          for i in $(seq 1 60); do
+
+            URL=$(grep -oE \
+              'https://[a-zA-Z0-9-]+\.trycloudflare\.com' \
+              /tmp/cloudflare.log | head -1 || true)
 
             if [ -n "$URL" ]; then
-              echo "$URL" > /tmp/url
+              echo "$URL" >/tmp/vm-url
               break
             fi
 
             sleep 2
           done
 
-          if [ ! -s /tmp/url ]; then
-            echo "💀 Tunnel failed"
+          if [ ! -s /tmp/vm-url ]; then
+            echo "💀 CLOUDFLARE FAILED"
             cat /tmp/cloudflare.log
             exit 1
           fi
 
-      - name: "🔥 VM READY"
+      - name: "🍃 MINT IS ALIVE"
         run: |
-          URL=$(cat /tmp/url)
+          URL="$(cat /tmp/vm-url)"
+          FINAL="$URL/vnc.html?autoconnect=true&resize=scale"
 
           echo ""
           echo "========================================"
-          echo "🍃 LINUX MINT DESKTOP IS ALIVE"
+          echo "       🍃 MINT DESKTOP READY"
           echo "========================================"
           echo ""
-          echo "🌐 OPEN:"
-          echo "$URL/vnc.html?autoconnect=true"
+          echo "🌐 $FINAL"
           echo ""
-          echo "👤 Linux user: mint"
-          echo "🔑 Linux password: mint"
+          echo "VNC password: mint"
+          echo "Linux user:   mint"
+          echo "Linux pass:   mint"
           echo ""
-          echo "⚠️ Keep this Action running!"
+          echo "KEEP THIS ACTION RUNNING!"
           echo "========================================"
 
-          echo "## 🍃 Linux Mint Browser VM" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### 🌐 [$URL/vnc.html?autoconnect=true]($URL/vnc.html?autoconnect=true)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**User:** \`mint\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Password:** \`mint\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "# 🍃 Mint Desktop"
+            echo ""
+            echo "## [🔥 OPEN THE VM]($FINAL)"
+            echo ""
+            echo "**VNC password:** \`mint\`"
+            echo ""
+            echo "**Linux user:** \`mint\`"
+            echo ""
+            echo "**Linux password:** \`mint\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          # KEEP RUNNER ALIVE
-          sleep 21000
+          # Keep checking the services instead of blindly sleeping.
+          while true; do
+
+            if ! sudo ss -lnt | grep -q ':5901'; then
+              echo "💀 VNC DIED"
+              cat /home/mint/.vnc/*.log || true
+              exit 1
+            fi
+
+            if ! sudo ss -lnt | grep -q ':6080'; then
+              echo "💀 noVNC DIED"
+              cat /tmp/novnc.log || true
+              exit 1
+            fi
+
+            sleep 30
+          done
