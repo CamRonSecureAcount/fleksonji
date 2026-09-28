@@ -1,0 +1,115 @@
+name: "🍃 Linux Mint Browser VM"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: "📦 Install desktop + noVNC"
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            cinnamon-desktop-environment \
+            tigervnc-standalone-server \
+            novnc websockify dbus-x11
+
+          sudo useradd -m -s /bin/bash mint || true
+          echo "mint:mint" | sudo chpasswd
+          sudo usermod -aG sudo mint
+
+      - name: "🖥️ Start Cinnamon VM desktop"
+        run: |
+          sudo -u mint mkdir -p /home/mint/.vnc
+
+          echo "mint" | sudo -u mint vncpasswd -f > /tmp/passwd
+          sudo mv /tmp/passwd /home/mint/.vnc/passwd
+          sudo chown mint:mint /home/mint/.vnc/passwd
+          sudo chmod 600 /home/mint/.vnc/passwd
+
+          cat <<'EOF' | sudo tee /home/mint/.vnc/xstartup
+          #!/bin/sh
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
+          exec dbus-launch --exit-with-session cinnamon-session
+          EOF
+
+          sudo chmod +x /home/mint/.vnc/xstartup
+          sudo chown -R mint:mint /home/mint/.vnc
+
+          sudo -u mint vncserver :1 \
+            -geometry 1280x720 \
+            -depth 24 \
+            -localhost yes
+
+      - name: "🌐 Start noVNC"
+        run: |
+          nohup websockify \
+            --web=/usr/share/novnc \
+            6080 localhost:5901 \
+            > /tmp/novnc.log 2>&1 &
+
+          sleep 3
+          curl -I http://127.0.0.1:6080/vnc.html
+
+      - name: "🚇 Create public tunnel"
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -O cloudflared
+
+          chmod +x cloudflared
+
+          nohup ./cloudflared tunnel \
+            --url http://127.0.0.1:6080 \
+            --no-autoupdate \
+            > /tmp/cloudflare.log 2>&1 &
+
+          echo "Waiting for tunnel..."
+
+          for i in $(seq 1 30); do
+            URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' /tmp/cloudflare.log | head -1 || true)
+
+            if [ -n "$URL" ]; then
+              echo "$URL" > /tmp/url
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [ ! -s /tmp/url ]; then
+            echo "💀 Tunnel failed"
+            cat /tmp/cloudflare.log
+            exit 1
+          fi
+
+      - name: "🔥 VM READY"
+        run: |
+          URL=$(cat /tmp/url)
+
+          echo ""
+          echo "========================================"
+          echo "🍃 LINUX MINT DESKTOP IS ALIVE"
+          echo "========================================"
+          echo ""
+          echo "🌐 OPEN:"
+          echo "$URL/vnc.html?autoconnect=true"
+          echo ""
+          echo "👤 Linux user: mint"
+          echo "🔑 Linux password: mint"
+          echo ""
+          echo "⚠️ Keep this Action running!"
+          echo "========================================"
+
+          echo "## 🍃 Linux Mint Browser VM" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🌐 [$URL/vnc.html?autoconnect=true]($URL/vnc.html?autoconnect=true)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**User:** \`mint\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Password:** \`mint\`" >> "$GITHUB_STEP_SUMMARY"
+
+          # KEEP RUNNER ALIVE
+          sleep 21000
